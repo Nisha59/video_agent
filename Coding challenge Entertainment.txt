@@ -1,0 +1,32 @@
+Coding challenge: AI ride video editing agent
+
+Dear applicant,
+thanks again for your application. To test your ability to build practical multimodal AI systems, we would like you to implement an agent that takes a video of a ride and automatically turns it into a short, engaging edited video.
+You should implement an agent, who should analyse the video, identify interesting moments, cut the video automatically, and use a toolbox of editing functions to enrich the final result.
+Examples of useful tools include overlays for speed, route, distance, elevation, timestamps, detected scenes, highlights, subtitles, map visualisations, music selection, transitions, or short social-media-style summaries. Please be creative and explain which tools your agent can use and why.
+We expect to receive your commented code as well as a short text description of your approach, the architecture of your agent, the editing decisions it makes, the results, and the main challenges you encountered.
+Please solve the challenge in Python. You may use libraries such as OpenCV, MoviePy, FFmpeg, Hugging Face models, GPS/GPX/FIT processing libraries, or any other suitable open-source tools.
+If you do not have time to implement all features, please focus on a robust end-to-end prototype: input video, automatic highlight selection, at least one meaningful overlay, and final rendered output.
+Please provide your solution via email attachment in a ZIP file. The ZIP should include the source code, a short README with setup instructions, and one example output video or a link to the result.
+
+Good luck!
+
+Your BMW Team
+
+Task 1: Build the ride video editing agent
+Implement an agent that takes a ride video as input and produces a shorter edited version. The agent should analyse the video and decide which segments are most relevant or visually interesting, for example based on scene changes, motion, detected objects, camera movement, audio cues, or user-defined prompts such as “make a 30-second highlight reel”. Please document the decision logic and explain how the agent selects, orders, and trims clips.
+
+Task 2: Implement an editing toolbox
+Create a toolbox of video-editing functions that the agent can call. At minimum, the toolbox should include cutting and concatenation, one visual overlay, and final rendering. Additional creative tools are encouraged, such as speed or route overlays from GPS/GPX/FIT data, mini-map route progress, distance or elevation indicators, detected landmark labels, automatic titles, scene captions, freeze frames, zoom-ins, transitions, audio ducking, soundtrack selection, or export formats for social media.
+
+Task 3: Agent reasoning and user interaction
+Describe how a user could interact with the agent through text prompts. For example, the user might request a cinematic version, a technical telemetry-focused version, a short social media reel, or a route summary. Explain how the agent interprets these requests and maps them to concrete editing actions.
+Provide a brief description of your agent architecture, including the input data, analysis modules, available tools, planning logic, and rendering pipeline. Also mention possible limitations, failure cases, and improvements you would make with more time.
+Expected submission
+•	Commented Python code and setup instructions.
+•	A short README explaining the agent design, tool selection, and editing logic.
+•	One input ride video or a link to the source video.
+•	One rendered output video or a link to the result.
+•	A short discussion of challenges, limitations, and possible next steps.
+
+

@@ -1,0 +1,6 @@
+moviepy
+opencv-python
+scenedetect
+gpxpy
+numpy
+pydub
