@@ -5,8 +5,9 @@ Collection of reusable video-editing tools that the agent can invoke to
 build the final ride video, via MoviePy.
 
 Currently implements:
-- VideoToolbox: cutting, concatenating, text/overlay burning, transitions,
-  and final rendering in multiple aspect ratios.
+- VideoToolbox: cutting, concatenating, text/overlay burning (including
+  Perception Agent-driven scene captions), transitions, and final
+  rendering in multiple aspect ratios.
 
 Still to come:
 - Frame-level image processing via OpenCV (opencv-python)
@@ -88,11 +89,25 @@ class VideoToolbox:
         if not clips:
             raise ValueError("concatenate_clips requires at least one clip")
 
+        if len(clips) == 1:
+            # Nothing to cut between or cross-fade into - running a single
+            # clip through either transition's "compose" concatenation
+            # machinery would still wrap it in mask-based compositing for
+            # an effect that has no second clip to blend with, which is
+            # pure per-frame overhead (mask arrays recomputed on every
+            # frame) for zero visible difference.
+            return clips[0]
+
         if transition == "none":
             return concatenate_videoclips(clips, method="compose")
 
         if transition == "fade":
-            overlap = 1.0  # seconds of cross-fade between adjacent clips
+            # Cross-fade overlap can't exceed any individual clip's own
+            # duration - CrossFadeIn on a clip shorter than `overlap` fades
+            # for longer than the clip is visible, and concatenate_videoclips
+            # only accepts one uniform `padding` value for every pair below,
+            # so the clamp has to be global rather than per-clip.
+            overlap = min(1.0, min(clip.duration for clip in clips))
             faded_clips = [clips[0]]
             for clip in clips[1:]:
                 faded_clips.append(clip.with_effects([vfx.CrossFadeIn(overlap)]))
@@ -199,6 +214,51 @@ class VideoToolbox:
 
         return CompositeVideoClip([clip, *speed_clips])
 
+    def add_scene_caption(
+        self, clip: VideoClip, description: str, duration: float = 2.0
+    ) -> VideoClip:
+        """
+        Briefly overlay `description` as a caption at the very start of
+        `clip`, fading out after `duration` seconds.
+
+        `description` is meant to come from PerceptionAgent's per-moment
+        captions (e.g. "highway driving at sunset"), giving each clip a
+        quick scene-setting subtitle as it begins. This is deliberately
+        different from add_text_overlay, which burns one caption for a
+        clip's *entire* duration - this one introduces the scene, then
+        fades out and gets out of the way.
+
+        Positioned at the top (unlike add_text_overlay's bottom) so the two
+        can be safely combined - the "social" style enables both by default,
+        and stacking two captions at the same position would render them
+        overlapping each other.
+
+        If `description` is empty, the clip is returned unchanged - this
+        overlay is opt-in and only useful when a description is available.
+        """
+        if not description:
+            return clip
+
+        display_duration = max(0.1, min(duration, clip.duration))
+        fade_duration = min(0.5, display_duration)
+
+        caption = (
+            TextClip(
+                font=self.font,
+                text=description,
+                font_size=40,
+                color="white",
+                stroke_color="black",
+                stroke_width=2,
+            )
+            .with_position(("center", "top"))
+            .with_start(0)
+            .with_duration(display_duration)
+            .with_effects([vfx.FadeOut(fade_duration)])
+        )
+
+        return CompositeVideoClip([clip, caption])
+
     # ------------------------------------------------------------------
     # Transitions
     # ------------------------------------------------------------------
@@ -214,12 +274,21 @@ class VideoToolbox:
     # Rendering
     # ------------------------------------------------------------------
 
-    def render(
-        self, clip: VideoClip, output_path: str, format: str = "landscape"
-    ) -> str:
+    def fit_to_format(self, clip: VideoClip, format: str = "landscape") -> VideoClip:
         """
-        Resize `clip` to match the target output format and write it to
-        `output_path`.
+        Resize/crop `clip` to match a named output format (see
+        FORMAT_SIZES).
+
+        Call this on each clip *before* burning in overlays (e.g. right
+        after cut_clip), not only at render time - overlay positions like
+        "top" or "bottom" are calculated against whatever frame they're
+        drawn on, so if a clip is only fit-to-format afterwards (e.g. once
+        on the final concatenated clip inside render()), an edge-positioned
+        overlay can end up outside the region the crop keeps. This is
+        especially visible when the source aspect ratio differs a lot from
+        the target format - e.g. portrait ride footage (9:16) rendered to
+        landscape (16:9) keeps only the middle ~32% of the frame's height,
+        which crops away anything anchored to the top or bottom edge.
 
         format: "landscape" (1920x1080), "vertical" (1080x1920), or
             "square" (1080x1080). See FORMAT_SIZES.
@@ -230,7 +299,33 @@ class VideoToolbox:
             )
 
         target_w, target_h = self.FORMAT_SIZES[format]
-        framed = self._fit_to_frame(clip, target_w, target_h)
+
+        if clip.w == target_w and clip.h == target_h:
+            # Already the right size (e.g. render()'s safety-net call on a
+            # clip that main.py already fit per-clip before overlays) -
+            # skip re-running the resize/crop transform. MoviePy composes
+            # transforms lazily per frame, so doing this "no-op" fit twice
+            # isn't actually free: it doubles the per-frame resize/crop
+            # work (and its temporary array allocations) for the entire
+            # render, which is wasteful at best and can exhaust memory on
+            # long clips at worst.
+            return clip
+
+        return self._fit_to_frame(clip, target_w, target_h)
+
+    def render(
+        self, clip: VideoClip, output_path: str, format: str = "landscape"
+    ) -> str:
+        """
+        Resize `clip` to match the target output format and write it to
+        `output_path`.
+
+        Safe to call even if `clip` was already fit to this format (e.g.
+        via fit_to_format() on each source clip before overlays) - fitting
+        an already-correctly-sized clip is a no-op, so this doubles as a
+        safety net for callers that skip the earlier per-clip fit.
+        """
+        framed = self.fit_to_format(clip, format)
         framed.write_videofile(output_path)
         return output_path
 
