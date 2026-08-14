@@ -126,6 +126,23 @@ calls an LLM. It works in four deterministic steps:
 This keeps the system fast, deterministic, and fully explainable (see the "Edit Summary"
 each run prints) — every decision maps back to a specific keyword, score, or description.
 
+## Challenges encountered
+
+- **Overlay/crop ordering.** Clips need to be resized/cropped to the target aspect ratio
+  *before* burning in edge-positioned overlays (timestamp, captions), doing it only at
+  final render time silently cropped those overlays out of frame.
+
+- **Transition edge cases.** A fixed 1-second cross-fade could exceed a very short clip's
+  own duration, and two caption overlays (scene description + prompt text) defaulting to
+  the same screen position rendered on top of each other, both needed explicit handling.
+
+- **Noisy scene detection.** PySceneDetect occasionally flagged sub-second false-positive
+  cuts, so a minimum-scene-duration merge step was added to keep clip candidates meaningful.
+  
+- **GPX/video time alignment.** Reconciling GPX telemetry timestamps with the video's own
+  timeline (for the speed overlay) proved harder than expected without embedded sync
+  metadata, so it's currently a documented assumption rather than a solved problem.
+
 ## Known limitations
 
 - **Keyword matching is brittle.** Phrasing the agent hasn't seen (e.g. "make it punchy and
