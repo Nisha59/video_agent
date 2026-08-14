@@ -49,11 +49,21 @@ class VideoAnalyzer:
         "scene": 0.2,
     }
 
+    # Scenes shorter than this get merged into a neighboring scene rather than
+    # standing alone as a clip candidate. Below ~1s, PySceneDetect cuts are
+    # often false positives (a flash, a quick pan) rather than a real
+    # standalone moment, and toolbox.VideoToolbox.concatenate_clips uses a
+    # fixed 1-second cross-fade between clips - a clip shorter than that
+    # can't be cleanly faded in and out. 1.5s leaves a bit of headroom above
+    # that fade duration.
+    MIN_SCENE_DURATION = 1.5
+
     def __init__(
         self,
         video_path: str,
         weights: Optional[Dict[str, float]] = None,
         motion_sample_every_n: int = 5,
+        min_scene_duration: Optional[float] = None,
     ):
         """
         Args:
@@ -62,10 +72,14 @@ class VideoAnalyzer:
                 scene) contributes to the final combined score.
             motion_sample_every_n: Only compute frame-differencing on every Nth
                 frame within a segment, to keep motion analysis fast on long videos.
+            min_scene_duration: Optional override for MIN_SCENE_DURATION.
         """
         self.video_path = video_path
         self.weights = weights or self.DEFAULT_WEIGHTS
         self.motion_sample_every_n = max(1, motion_sample_every_n)
+        self.min_scene_duration = (
+            self.MIN_SCENE_DURATION if min_scene_duration is None else min_scene_duration
+        )
 
     def analyze(self) -> List[Moment]:
         """
@@ -130,7 +144,41 @@ class VideoAnalyzer:
             cap.release()
             return [(0.0, duration)]
 
-        return [(start.get_seconds(), end.get_seconds()) for start, end in scene_list]
+        scenes = [(start.get_seconds(), end.get_seconds()) for start, end in scene_list]
+        return self._merge_short_scenes(scenes, self.min_scene_duration)
+
+    @staticmethod
+    def _merge_short_scenes(
+        scenes: List[Tuple[float, float]], min_duration: float
+    ) -> List[Tuple[float, float]]:
+        """
+        Merge consecutive scenes forward until each merged scene reaches
+        min_duration, so an overly-short scene-cut detection doesn't become a
+        standalone clip candidate on its own (see MIN_SCENE_DURATION).
+        """
+        if not scenes:
+            return scenes
+
+        merged: List[Tuple[float, float]] = []
+        acc_start, acc_end = scenes[0]
+        for start, end in scenes[1:]:
+            if (acc_end - acc_start) < min_duration:
+                acc_end = end
+            else:
+                merged.append((acc_start, acc_end))
+                acc_start, acc_end = start, end
+        merged.append((acc_start, acc_end))
+
+        # The last accumulated scene may still be short if the video ran out
+        # before it reached min_duration - fold it into the previous one
+        # instead of leaving a too-short clip candidate.
+        if len(merged) > 1 and (merged[-1][1] - merged[-1][0]) < min_duration:
+            prev_start, _ = merged[-2]
+            _, last_end = merged[-1]
+            merged[-2] = (prev_start, last_end)
+            merged.pop()
+
+        return merged
 
     def _compute_motion_scores(self, scenes: List[Tuple[float, float]]) -> List[float]:
         """

@@ -4,3 +4,6 @@ scenedetect
 gpxpy
 numpy
 pydub
+transformers
+torch
+pillow
